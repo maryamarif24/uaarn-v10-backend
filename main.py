@@ -6,8 +6,11 @@ from fastapi import FastAPI, Request, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
+from quiz import router as quiz_router
+from agents import Agent
+from summarize import app as summarizer_router
 
-# Import OpenAI Agents SDK
+
 from agents import (
     Agent,
     Runner,
@@ -18,6 +21,20 @@ from agents import (
     GuardrailFunctionOutput,
     InputGuardrailTripwireTriggered
 )
+
+app = FastAPI(title="UAARN AI Agents")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allow all for dev
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+app.include_router(quiz_router, prefix="/quiz")
+app.include_router(summarizer_router, prefix="/summarize")
+
 
 # ✅ Load environment variables
 load_dotenv()
@@ -44,16 +61,6 @@ config = RunConfig(
     tracing_disabled=True
 )
 
-# ✅ Initialize FastAPI app
-app = FastAPI()
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # Allow all for dev
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 # ✅ In-memory credit tracking
 CREDITS = {}
@@ -246,3 +253,8 @@ async def chat(
 @app.get("/")
 async def root():
     return {"message": "UAARN Backend is running successfully 🚀"}
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

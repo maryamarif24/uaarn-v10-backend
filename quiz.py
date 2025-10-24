@@ -1,10 +1,21 @@
 import os
 import json
-from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from dotenv import load_dotenv
-from agents import Agent, Runner, OpenAIChatCompletionsModel, AsyncOpenAI, RunConfig
+from typing import AsyncGenerator
+
+from agents import (
+    Agent,
+    Runner,
+    OpenAIChatCompletionsModel,
+    AsyncOpenAI,
+    RunConfig
+)
+
+# Create router instead of FastAPI app
+router = APIRouter(prefix="/quiz", tags=["Quiz"])
 
 # Load environment variables
 load_dotenv()
@@ -12,19 +23,7 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 if not GEMINI_API_KEY:
     raise RuntimeError("❌ GEMINI_API_KEY not found in .env file")
 
-# FastAPI app
-app = FastAPI()
-
-# Enable CORS
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # Change to your frontend origin for production
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# External Gemini client
+# External Gemini client setup
 external_client = AsyncOpenAI(
     api_key=GEMINI_API_KEY,
     base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
@@ -33,7 +32,7 @@ external_client = AsyncOpenAI(
 # Model setup
 model = OpenAIChatCompletionsModel(
     model="gemini-2.0-flash",
-    openai_client=external_client
+    openai_client=external_client,
 )
 
 # Run configuration
@@ -43,11 +42,10 @@ config = RunConfig(
     tracing_disabled=True,
 )
 
-# Request body model
 class QuizRequest(BaseModel):
     topic: str
 
-# Create the quiz generation agent
+# Define AI Agent
 agent = Agent(
     name="QuizAgent",
     instructions=(
@@ -61,36 +59,27 @@ agent = Agent(
     ),
 )
 
-# API endpoint
-@app.post("/quiz")
+# ---------------------------
+# STREAMING QUIZ ENDPOINT
+# ---------------------------
+@router.post("/")
 async def generate_quiz(req: QuizRequest):
-    """
-    Generate a multiple-choice quiz using Gemini model through OpenAI Agents SDK.
-    """
-    try:
-        topic = req.topic.strip()
-        if not topic:
-            raise HTTPException(status_code=400, detail="Topic is required")
+    topic = req.topic.strip()
+    if not topic:
+        raise HTTPException(status_code=400, detail="Topic is required")
 
-        result = await Runner.run(agent, f"Generate quiz on {topic}", run_config=config)
-
-        # Get the output from the AI agent
-        output = getattr(result, "output_text", None) or getattr(result, "output", None)
-        if not output:
-            raise HTTPException(status_code=500, detail="No output returned from AI")
-
-        # Ensure it's valid JSON
+    async def event_stream() -> AsyncGenerator[str, None]:
         try:
-            json.loads(output)
-        except json.JSONDecodeError:
-            raise HTTPException(status_code=500, detail="Invalid JSON format from AI")
+            async for event in Runner.stream(agent, f"Generate quiz on {topic}", run_config=config):
+                chunk = getattr(event, "output_text", None)
+                if chunk:
+                    yield chunk
+        except Exception as e:
+            yield f"\n[ERROR] {str(e)}"
 
-        return {"quiz": output}
+    return StreamingResponse(event_stream(), media_type="text/plain")
 
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Agent run failed: {e}")
-
-# Root route (optional)
-@app.get("/")
+# Optional test route
+@router.get("/")
 def root():
-    return {"message": "✅ AI Quiz Backend is running!"}
+    return {"message": "✅ Quiz router is working!"}
