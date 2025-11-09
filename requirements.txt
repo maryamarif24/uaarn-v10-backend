@@ -9,4 +9,3 @@ python-docx
 PyMuPDF
 reportlab
 pydantic
-sqlite3
