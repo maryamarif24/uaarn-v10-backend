@@ -11,3 +11,4 @@ python-docx
 PyMuPDF
 reportlab
 pydantic
+tensorflow==1.15
