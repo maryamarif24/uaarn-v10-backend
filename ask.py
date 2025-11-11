@@ -133,6 +133,11 @@ Rules:
         input_guardrails=[study_guardrail]
     )
 
+@router.options("/api/chat")
+async def options_chat():
+    return {}
+
+
 # Main endpoint
 @router.post("/api/chat", response_model=ChatResponse)
 async def chat(
