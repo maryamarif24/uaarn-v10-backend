@@ -2,7 +2,8 @@ import os
 import re
 from datetime import datetime
 from typing import Optional
-from fastapi import FastAPI, Request, HTTPException, Header, APIRouter
+
+from fastapi import APIRouter, Request, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
@@ -10,48 +11,45 @@ from dotenv import load_dotenv
 from agents import (
     Agent,
     Runner,
-    OpenAIChatCompletionsModel,
     AsyncOpenAI,
+    OpenAIChatCompletionsModel,
     RunConfig,
     input_guardrail,
     GuardrailFunctionOutput,
     InputGuardrailTripwireTriggered
 )
 
+# Router
 router = APIRouter(prefix="/ask", tags=["Ask"])
 
-
+# Load environment variables
 load_dotenv()
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 if not GEMINI_API_KEY:
-    raise RuntimeError("GEMINI_API_KEY not found in .env")
+    raise RuntimeError("GEMINI_API_KEY not found in environment variables")
 
-
+# Gemini client (OpenAI-style wrapper)
 external_client = AsyncOpenAI(
     api_key=GEMINI_API_KEY,
     base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
 )
-
 
 model = OpenAIChatCompletionsModel(
     model="gemini-2.0-flash",
     openai_client=external_client
 )
 
-
+# Global RunConfig
 config = RunConfig(
     model=model,
     tracing_disabled=True
 )
 
-
-
+# Token system
 CREDITS = {}
 DEFAULT_CREDIT_TOKENS = int(os.getenv("DEFAULT_CREDIT_TOKENS", "100000"))
 USER_NAMES = {}
-
-
 
 def get_user_id(header_user_id: Optional[str]) -> str:
     return header_user_id or "anonymous"
@@ -75,33 +73,18 @@ def deduct_tokens(user_id: str, tokens: int) -> bool:
         return True
     return False
 
+# Output cleaner
 def format_response(text: str) -> str:
-    """
-    Cleans and enforces structured formatting from model output.
-    - Adds newlines after list items.
-    - Preserves Markdown formatting.
-    """
-
-    text = re.sub(r'(?<=\d\.)\s+', ' ', text)  
-    text = re.sub(r'(?<=\d\))\s+', ' ', text) 
-
-    
+    text = re.sub(r'(?<=\d\.)\s+', ' ', text)
+    text = re.sub(r'(?<=\d\))\s+', ' ', text)
     text = re.sub(r'(\d+\.\s+)', r'\n\1', text)
     text = re.sub(r'(\d+\)\s+)', r'\n\1', text)
     text = re.sub(r'([\-•]\s+)', r'\n\1', text)
-
-    
     text = text.replace("\\n", "\n")
-
-    
     text = re.sub(r'\n{3,}', '\n\n', text)
-
-    
     return text.strip()
 
-
-
-
+# Request / Response models
 class ChatRequest(BaseModel):
     message: str
     max_tokens: Optional[int] = 512
@@ -115,8 +98,7 @@ class ChatResponse(BaseModel):
     tokens_used_estimate: Optional[int] = None
     tokens_remaining: Optional[int] = None
 
-
-
+# Guardrail
 @input_guardrail
 async def study_guardrail(ctx, agent: Agent, user_input: str | list) -> GuardrailFunctionOutput:
     text = user_input if isinstance(user_input, str) else " ".join(
@@ -124,47 +106,34 @@ async def study_guardrail(ctx, agent: Agent, user_input: str | list) -> Guardrai
     )
 
     study_keywords = [
-        "study", "explain", "summarize", "lecture", "homework", "exercise", "math",
-        "what", "why", "when", "how", "where", "solve",
-        "physics", "chemistry", "biology", "history", "essay", "exam", "concept", "cells"
+        "study", "explain", "summarize", "lecture", "homework",
+        "exercise", "math", "physics", "chemistry", "biology",
+        "history", "essay", "exam", "concept", "cells",
+        "what", "why", "when", "how", "where", "solve", "tell"
     ]
+
     if not any(kw in text.lower() for kw in study_keywords):
         return GuardrailFunctionOutput(output_info=None, tripwire_triggered=True)
 
     return GuardrailFunctionOutput(output_info=None, tripwire_triggered=False)
 
-
-
+# Agent creator
 def create_study_agent():
     return Agent(
         name="UAARN Study Agent",
         instructions="""
 You are UAARN's Study Agent.
 
-Your role:
-- Explain study-related questions clearly and concisely.
-- Always format your answers using structured Markdown.
-- When listing steps, rules, examples, or explanations:
-  1. Use **numbered lists** for sequences or procedures.
-  2. Use **bulleted lists** for general points.
-  3. Each new point or step must start on a **new line**.
-  4. Never return all points in a single paragraph.
-  5. Use headings and subheadings (like '### Definition:' or '### Example:') where appropriate.
-
-Example output:
-Newton’s Laws of Motion
-1. First Law (Inertia):** An object remains at rest or uniform motion unless acted upon by a force.
-2. Second Law (F = ma):** Force equals mass times acceleration.
-3. Third Law (Action-Reaction):** Every action has an equal and opposite reaction.
-
-Avoid any unrelated, harmful, or non-study topics.
+Rules:
+1. Only answer study-related questions.
+2. Use structured Markdown.
+3. Each point starts on a new line.
+4. Use proper headings.
 """,
         input_guardrails=[study_guardrail]
     )
 
-
-
-
+# Main endpoint
 @router.post("/api/chat", response_model=ChatResponse)
 async def chat(
     req: ChatRequest,
@@ -180,17 +149,16 @@ async def chat(
     if not text:
         raise HTTPException(status_code=400, detail="Empty message")
 
-    
+    # Greetings shortcut
     greetings = ["hi", "hello", "hey", "salam", "assalam", "assalamu", "assalamualaikum"]
     if any(text.lower().startswith(g) for g in greetings):
         return ChatResponse(
-            reply=f"👋 Hello {user_name}! How can I help you with your studies today?",
+            reply=f"👋 Hello {user_name}! How can I help you study today?",
             tokens_used_estimate=0,
             tokens_remaining=CREDITS[user_id]["tokens_left"]
         )
 
-   
-   
+    # Token estimate
     max_tokens = min(1024, req.max_tokens or 512)
     estimated_tokens = max(1, int(len(text) / 4)) + max_tokens
 
@@ -202,24 +170,22 @@ async def chat(
 
     try:
         result = await Runner.run(agent, user_prompt, run_config=config)
-        reply_text = getattr(result, "final_output", str(result))
+        reply_text = getattr(result, "final_output", "No response from agent")
         formatted = format_response(reply_text)
 
     except InputGuardrailTripwireTriggered:
         return ChatResponse(
             reply="⚠️ Please ask only study-related questions.",
-            redirected_to=None,
             tokens_used_estimate=0,
             tokens_remaining=CREDITS[user_id]["tokens_left"]
         )
+
     except Exception as e:
-        
         CREDITS[user_id]["tokens_left"] += estimated_tokens
-        raise HTTPException(status_code=500, detail=f"Agent error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
     return ChatResponse(
         reply=formatted,
         tokens_used_estimate=estimated_tokens,
         tokens_remaining=CREDITS[user_id]["tokens_left"]
     )
-
