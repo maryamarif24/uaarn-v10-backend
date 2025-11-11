@@ -10,5 +10,5 @@ python-docx
 PyMuPDF
 reportlab
 pydantic
-tensorflow==1.15.0
+tensorflow==2.13.0
 gym==0.21.0
