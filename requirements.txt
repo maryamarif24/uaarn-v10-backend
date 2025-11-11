@@ -3,7 +3,7 @@ uvicorn[standard]
 python-dotenv
 openai
 openai-agents
-agents
+agents==1.4.0
 aiohttp
 youtube-transcript-api
 python-multipart
@@ -12,3 +12,4 @@ PyMuPDF
 reportlab
 pydantic
 tensorflow==1.15
+gym==0.21.0
