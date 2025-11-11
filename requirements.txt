@@ -2,7 +2,6 @@ fastapi
 uvicorn[standard]
 python-dotenv
 openai
-openai-agents
 agents==1.4.0
 aiohttp
 youtube-transcript-api
