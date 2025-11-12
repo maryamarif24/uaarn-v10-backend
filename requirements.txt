@@ -13,7 +13,9 @@ reportlab
 pydantic
 gym==0.21.0
 
+# Compatibility fixes
 pip>=24.0
-griffe>=1.5.6
+griffe==1.4.0
 
+# OpenAI Agents SDK (latest version from GitHub)
 git+https://github.com/openai/openai-agents-python.git
