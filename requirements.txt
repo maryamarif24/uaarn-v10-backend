@@ -4,7 +4,6 @@ fastapi
 uvicorn[standard]
 python-dotenv
 openai
-git+https://github.com/openai/openai-agents-python.git
 aiohttp
 youtube-transcript-api
 python-multipart
@@ -13,3 +12,8 @@ PyMuPDF
 reportlab
 pydantic
 gym==0.21.0
+
+pip>=24.0
+griffe>=1.5.6
+
+git+https://github.com/openai/openai-agents-python.git
